@@ -1,5 +1,9 @@
 # Rapport - Projet IoT ESP32
 
+## Navigation Git
+
+Chaque avancement valide du projet est repere par un tag Git. Pour consulter une etape precise, le correcteur peut utiliser `git checkout tp1-pilotage-local`, `git checkout tp1-5-json-serie`, `git checkout tp3-wifi-http-littlefs` ou `git checkout tp4-mqtt`.
+
 ## Avancement 1 - TP1 : Pilotage local de l'ESP
 
 ### Resume de la periode couverte par le tag
