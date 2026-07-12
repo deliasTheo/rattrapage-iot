@@ -1,3 +1,4 @@
+#include <ArduinoJson.h>
 #include <DHT.h>
 
 // TP1.0 page 50 / section 11.1
@@ -25,9 +26,18 @@ const uint8_t NB_MESURES_FILTRE = 5;
 // compatible avec une commande PWM sur GPIO 27.
 #define ACTIVER_PWM_VENTILATEUR 0
 
+const char* IDENTIFIANT_ESP = "ESP32 rattrapage";
+const char* UTILISATEUR = "Theo Delias";
+const char* SALLE = "Maison";
+const char* ADRESSE = "Non renseignee";
+const char* LOCALISATION = "A definir";
+const double GPS_LATITUDE = 43.62453842;
+const double GPS_LONGITUDE = 7.050628185;
+
 float mesures[NB_MESURES_FILTRE];
 uint8_t indexMesure = 0;
 uint8_t nbMesuresDisponibles = 0;
+uint8_t vitesseVentilateur = 0;
 
 enum ModeRegulation {
   MODE_ARRET,
@@ -48,7 +58,6 @@ void setup() {
   pinMode(PIN_VENTILATEUR, OUTPUT);
 
   appliquerMode(MODE_ARRET, 0.0);
-  Serial.println("TP1 - Regulation locale temperature");
 }
 
 void loop() {
@@ -62,7 +71,7 @@ void loop() {
 
   float temperature = dht.readTemperature();
   if (isnan(temperature)) {
-    Serial.println("Erreur lecture capteur DHT");
+    afficherErreurJson("dht_read");
     return;
   }
 
@@ -78,7 +87,7 @@ void loop() {
     commanderVentilateur(temperatureFiltree);
   }
 
-  afficherEtat(temperature, temperatureFiltree);
+  afficherEtatJson(temperature, temperatureFiltree);
 }
 
 void ajouterMesure(float temperature) {
@@ -132,13 +141,16 @@ void appliquerMode(ModeRegulation mode, float temperatureFiltree) {
 
 void commanderVentilateur(float temperatureFiltree) {
   if (modeActuel != MODE_CLIMATISATION) {
+    vitesseVentilateur = 0;
     digitalWrite(PIN_VENTILATEUR, LOW);
     return;
   }
 
 #if ACTIVER_PWM_VENTILATEUR
-  analogWrite(PIN_VENTILATEUR, calculerVitesseVentilateur(temperatureFiltree));
+  vitesseVentilateur = calculerVitesseVentilateur(temperatureFiltree);
+  analogWrite(PIN_VENTILATEUR, vitesseVentilateur);
 #else
+  vitesseVentilateur = 255;
   digitalWrite(PIN_VENTILATEUR, HIGH);
 #endif
 }
@@ -157,13 +169,97 @@ uint8_t calculerVitesseVentilateur(float temperatureFiltree) {
   return 120 + (uint8_t)((depassement / ECART_PLEINE_VITESSE) * 135.0);
 }
 
-void afficherEtat(float temperatureBrute, float temperatureFiltree) {
-  Serial.print("temperature_brute=");
-  Serial.print(temperatureBrute);
-  Serial.print(" C | temperature_filtree=");
-  Serial.print(temperatureFiltree);
-  Serial.print(" C | mode=");
-  Serial.println(nomMode(modeActuel));
+void afficherEtatJson(float temperatureBrute, float temperatureFiltree) {
+  StaticJsonDocument<1500> doc;
+
+  JsonObject status = doc["status"].to<JsonObject>();
+  status["temperature"] = temperatureFiltree;
+  status["temperature_raw"] = temperatureBrute;
+  status["light"] = 0;
+  status["regul"] = "RUNNING";
+  status["fire"] = false;
+  status["heat"] = modeActuel == MODE_CHAUFFAGE ? "ON" : "OFF";
+  status["cold"] = modeActuel == MODE_CLIMATISATION ? "ON" : "OFF";
+  status["fanspeed"] = vitesseVentilateur;
+  status["mode"] = nomMode(modeActuel);
+
+  JsonObject location = doc["location"].to<JsonObject>();
+  location["room"] = SALLE;
+  JsonObject gps = location["gps"].to<JsonObject>();
+  gps["lat"] = GPS_LATITUDE;
+  gps["lon"] = GPS_LONGITUDE;
+  location["address"] = ADRESSE;
+
+  JsonObject regul = doc["regul"].to<JsonObject>();
+  regul["lt"] = SEUIL_BAS;
+  regul["ht"] = SEUIL_HAUT;
+  regul["hysteresis"] = HYSTERESIS;
+
+  JsonObject info = doc["info"].to<JsonObject>();
+  info["ident"] = IDENTIFIANT_ESP;
+  info["user"] = UTILISATEUR;
+  info["loc"] = LOCALISATION;
+
+  JsonObject net = doc["net"].to<JsonObject>();
+  net["uptime"] = millis() / 1000;
+  net["ssid"] = "NOP";
+  net["mac"] = "NOP";
+  net["ip"] = "0.0.0.0";
+
+  JsonObject reporthost = doc["reporthost"].to<JsonObject>();
+  reporthost["target_ip"] = "127.0.0.1";
+  reporthost["target_port"] = 1880;
+  reporthost["sp"] = INTERVALLE_MESURE_MS / 1000;
+
+  serializeJson(doc, Serial);
+  Serial.println();
+}
+
+void afficherErreurJson(const char* codeErreur) {
+  StaticJsonDocument<1500> doc;
+
+  JsonObject status = doc["status"].to<JsonObject>();
+  status["temperature"] = -999.0;
+  status["temperature_raw"] = -999.0;
+  status["light"] = 0;
+  status["regul"] = "HALT";
+  status["fire"] = false;
+  status["heat"] = "OFF";
+  status["cold"] = "OFF";
+  status["fanspeed"] = 0;
+  status["mode"] = "erreur";
+  status["error"] = codeErreur;
+
+  JsonObject location = doc["location"].to<JsonObject>();
+  location["room"] = SALLE;
+  JsonObject gps = location["gps"].to<JsonObject>();
+  gps["lat"] = GPS_LATITUDE;
+  gps["lon"] = GPS_LONGITUDE;
+  location["address"] = ADRESSE;
+
+  JsonObject regul = doc["regul"].to<JsonObject>();
+  regul["lt"] = SEUIL_BAS;
+  regul["ht"] = SEUIL_HAUT;
+  regul["hysteresis"] = HYSTERESIS;
+
+  JsonObject info = doc["info"].to<JsonObject>();
+  info["ident"] = IDENTIFIANT_ESP;
+  info["user"] = UTILISATEUR;
+  info["loc"] = LOCALISATION;
+
+  JsonObject net = doc["net"].to<JsonObject>();
+  net["uptime"] = millis() / 1000;
+  net["ssid"] = "NOP";
+  net["mac"] = "NOP";
+  net["ip"] = "0.0.0.0";
+
+  JsonObject reporthost = doc["reporthost"].to<JsonObject>();
+  reporthost["target_ip"] = "127.0.0.1";
+  reporthost["target_port"] = 1880;
+  reporthost["sp"] = INTERVALLE_MESURE_MS / 1000;
+
+  serializeJson(doc, Serial);
+  Serial.println();
 }
 
 const char* nomMode(ModeRegulation mode) {

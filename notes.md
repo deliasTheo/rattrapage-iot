@@ -33,3 +33,25 @@ L'utilisateur a valide la partie TP1. Cette validation marque la fin de la premi
 Le tag Git doit permettre de retrouver cet etat exact du projet pour le rapport et pour comparaison avec les etapes suivantes. Le rapport correspondant est genere a partir du journal de bord, conformement aux consignes du projet.
 
 Point important pour le rapport : l'organisation du projet a ete ajustee apres retour utilisateur. La premiere proposition separait trop la documentation de TP1 dans des fichiers specifiques. La correction a permis d'adopter une logique plus propre : un code evolutif unique et des tags pour figer chaque etape validee.
+
+## 2026-07-12 - Debut TP1.5, communication serie et JSON
+
+L'etape 2 commence apres validation et tag du TP1. Les documents consultes sont `docs/TP1.5-json.pdf`, en particulier la page 28 qui donne le modele JSON attendu, et les pages 29 a 33 qui indiquent l'utilisation d'ArduinoJson et l'interet de valider le JSON produit.
+
+Decision technique : le code TP1 n'est pas remplace. Il est etendu dans `esp_iot/esp_iot.ino` pour conserver la regulation locale et ajouter une sortie JSON sur le port serie. Le JSON reprend les grandes sections du modele fourni : `status`, `location`, `regul`, `info`, `net` et `reporthost`.
+
+Le JSON est emis sur une seule ligne a chaque mesure. Ce choix facilite la copie depuis le moniteur serie et la reutilisation future dans Node-RED ou un script de validation. Les champs reseau restent des valeurs neutres (`NOP`, `0.0.0.0`) car le WiFi n'est pas encore une etape validee.
+
+Correction ajoutee pendant l'etape : le sketch ne doit pas melanger texte libre et JSON sur le port serie. En cas d'erreur de lecture DHT, il emet maintenant aussi un objet JSON avec `status.error`, afin de garder un flux serie coherent pour la validation et les futures integrations.
+
+Correction de perimetre apres retour utilisateur : les dossiers `samples/` et `tools/` ont ete supprimes, car ils ajoutaient un validateur et un exemple hors de la demande immediate. Le TP1.5 doit rester centre sur le code ESP qui produit un JSON propre sur le port serie. Cette erreur est interessante pour le rapport, car elle montre une limite de l'IA : tendance a ajouter des outils utiles mais non demandes.
+
+## 2026-07-12 - Mise a jour du rapport pendant TP1.5
+
+Le rapport a ete mis a jour a la demande de l'utilisateur pour inclure l'avancement TP1.5 et la correction de perimetre liee a la suppression de `samples/` et `tools/`. Aucun tag TP1.5 n'a ete cree a ce stade, car l'etape n'a pas encore ete annoncee comme validee.
+
+## 2026-07-12 - Restructuration du rapport par avancement
+
+L'utilisateur a precise que le rapport ne devait pas etre organise comme un document global avec des sections uniques melangeant toutes les etapes. Il souhaite une partie par avancement, avec les memes sous-parties repetees a chaque fois : travaux realises, decisions techniques, difficultes, analyse des prompts, points forts, points d'amelioration, blocages, enseignements, observations et notes personnelles.
+
+Correction appliquee : `rapport.md` a ete restructure en `Avancement 1 - TP1` puis `Avancement 2 - TP1.5`. La note personnelle deja ecrite par l'utilisateur a ete conservee dans la partie TP1. La partie TP1.5 garde une section `Notes personnelles` vide pour etre completee plus tard.
