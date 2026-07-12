@@ -1,5 +1,8 @@
 #include <ArduinoJson.h>
 #include <DHT.h>
+#include <LittleFS.h>
+#include <WebServer.h>
+#include <WiFi.h>
 
 // TP1.0 page 50 / section 11.1
 // Brochage impose pour garder le montage testable par l'enseignant.
@@ -8,12 +11,16 @@ const uint8_t PIN_LED_CLIM = 19;
 const uint8_t PIN_LED_CHAUFFAGE = 21;
 const uint8_t PIN_VENTILATEUR = 27;
 
+const char* WIFI_SSID = "A_REMPLACER";
+const char* WIFI_PASSWORD = "A_REMPLACER";
+const char* WIFI_HOSTNAME = "esp32-rattrapage-iot";
+
 // Si le capteur est un DHT22, remplacer DHT11 par DHT22.
 #define DHT_TYPE DHT11
 DHT dht(PIN_DHT, DHT_TYPE);
 
-const float SEUIL_BAS = 22.0;
-const float SEUIL_HAUT = 28.0;
+float seuilBas = 22.0;
+float seuilHaut = 28.0;
 const float HYSTERESIS = 1.0;
 const float ECART_PLEINE_VITESSE = 4.0;
 
@@ -38,6 +45,9 @@ float mesures[NB_MESURES_FILTRE];
 uint8_t indexMesure = 0;
 uint8_t nbMesuresDisponibles = 0;
 uint8_t vitesseVentilateur = 0;
+float derniereTemperatureBrute = -999.0;
+float derniereTemperatureFiltree = -999.0;
+bool lectureCapteurOk = false;
 
 enum ModeRegulation {
   MODE_ARRET,
@@ -49,6 +59,8 @@ ModeRegulation modeActuel = MODE_ARRET;
 unsigned long derniereMesureMs = 0;
 unsigned long dernierChangementModeMs = 0;
 
+WebServer server(80);
+
 void setup() {
   Serial.begin(115200);
   dht.begin();
@@ -58,9 +70,14 @@ void setup() {
   pinMode(PIN_VENTILATEUR, OUTPUT);
 
   appliquerMode(MODE_ARRET, 0.0);
+  initialiserLittleFS();
+  connecterWiFi();
+  configurerRoutesHttp();
+  server.begin();
 }
 
 void loop() {
+  server.handleClient();
   unsigned long maintenant = millis();
 
   if (maintenant - derniereMesureMs < INTERVALLE_MESURE_MS) {
@@ -71,12 +88,16 @@ void loop() {
 
   float temperature = dht.readTemperature();
   if (isnan(temperature)) {
+    lectureCapteurOk = false;
     afficherErreurJson("dht_read");
     return;
   }
 
+  lectureCapteurOk = true;
+  derniereTemperatureBrute = temperature;
   ajouterMesure(temperature);
   float temperatureFiltree = calculerMoyenne();
+  derniereTemperatureFiltree = temperatureFiltree;
   ModeRegulation modeDemande = determinerMode(temperatureFiltree);
 
   if (modeDemande != modeActuel &&
@@ -111,20 +132,20 @@ float calculerMoyenne() {
 
 ModeRegulation determinerMode(float temperatureFiltree) {
   if (modeActuel == MODE_CLIMATISATION &&
-      temperatureFiltree > SEUIL_HAUT - HYSTERESIS) {
+      temperatureFiltree > seuilHaut - HYSTERESIS) {
     return MODE_CLIMATISATION;
   }
 
   if (modeActuel == MODE_CHAUFFAGE &&
-      temperatureFiltree < SEUIL_BAS + HYSTERESIS) {
+      temperatureFiltree < seuilBas + HYSTERESIS) {
     return MODE_CHAUFFAGE;
   }
 
-  if (temperatureFiltree > SEUIL_HAUT) {
+  if (temperatureFiltree > seuilHaut) {
     return MODE_CLIMATISATION;
   }
 
-  if (temperatureFiltree < SEUIL_BAS) {
+  if (temperatureFiltree < seuilBas) {
     return MODE_CHAUFFAGE;
   }
 
@@ -156,7 +177,7 @@ void commanderVentilateur(float temperatureFiltree) {
 }
 
 uint8_t calculerVitesseVentilateur(float temperatureFiltree) {
-  float depassement = temperatureFiltree - SEUIL_HAUT;
+  float depassement = temperatureFiltree - seuilHaut;
 
   if (depassement <= 0.0) {
     return 120;
@@ -191,8 +212,8 @@ void afficherEtatJson(float temperatureBrute, float temperatureFiltree) {
   location["address"] = ADRESSE;
 
   JsonObject regul = doc["regul"].to<JsonObject>();
-  regul["lt"] = SEUIL_BAS;
-  regul["ht"] = SEUIL_HAUT;
+  regul["lt"] = seuilBas;
+  regul["ht"] = seuilHaut;
   regul["hysteresis"] = HYSTERESIS;
 
   JsonObject info = doc["info"].to<JsonObject>();
@@ -202,9 +223,9 @@ void afficherEtatJson(float temperatureBrute, float temperatureFiltree) {
 
   JsonObject net = doc["net"].to<JsonObject>();
   net["uptime"] = millis() / 1000;
-  net["ssid"] = "NOP";
-  net["mac"] = "NOP";
-  net["ip"] = "0.0.0.0";
+  net["ssid"] = WiFi.status() == WL_CONNECTED ? WiFi.SSID() : "NOP";
+  net["mac"] = WiFi.macAddress();
+  net["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "0.0.0.0";
 
   JsonObject reporthost = doc["reporthost"].to<JsonObject>();
   reporthost["target_ip"] = "127.0.0.1";
@@ -238,8 +259,8 @@ void afficherErreurJson(const char* codeErreur) {
   location["address"] = ADRESSE;
 
   JsonObject regul = doc["regul"].to<JsonObject>();
-  regul["lt"] = SEUIL_BAS;
-  regul["ht"] = SEUIL_HAUT;
+  regul["lt"] = seuilBas;
+  regul["ht"] = seuilHaut;
   regul["hysteresis"] = HYSTERESIS;
 
   JsonObject info = doc["info"].to<JsonObject>();
@@ -249,9 +270,9 @@ void afficherErreurJson(const char* codeErreur) {
 
   JsonObject net = doc["net"].to<JsonObject>();
   net["uptime"] = millis() / 1000;
-  net["ssid"] = "NOP";
-  net["mac"] = "NOP";
-  net["ip"] = "0.0.0.0";
+  net["ssid"] = WiFi.status() == WL_CONNECTED ? WiFi.SSID() : "NOP";
+  net["mac"] = WiFi.macAddress();
+  net["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "0.0.0.0";
 
   JsonObject reporthost = doc["reporthost"].to<JsonObject>();
   reporthost["target_ip"] = "127.0.0.1";
@@ -260,6 +281,158 @@ void afficherErreurJson(const char* codeErreur) {
 
   serializeJson(doc, Serial);
   Serial.println();
+}
+
+String construireJsonEtat() {
+  String sortie;
+  StaticJsonDocument<1500> doc;
+
+  JsonObject status = doc["status"].to<JsonObject>();
+  status["temperature"] = derniereTemperatureFiltree;
+  status["temperature_raw"] = derniereTemperatureBrute;
+  status["light"] = 0;
+  status["regul"] = lectureCapteurOk ? "RUNNING" : "HALT";
+  status["fire"] = false;
+  status["heat"] = modeActuel == MODE_CHAUFFAGE ? "ON" : "OFF";
+  status["cold"] = modeActuel == MODE_CLIMATISATION ? "ON" : "OFF";
+  status["fanspeed"] = vitesseVentilateur;
+  status["mode"] = nomMode(modeActuel);
+
+  JsonObject location = doc["location"].to<JsonObject>();
+  location["room"] = SALLE;
+  JsonObject gps = location["gps"].to<JsonObject>();
+  gps["lat"] = GPS_LATITUDE;
+  gps["lon"] = GPS_LONGITUDE;
+  location["address"] = ADRESSE;
+
+  JsonObject regul = doc["regul"].to<JsonObject>();
+  regul["lt"] = seuilBas;
+  regul["ht"] = seuilHaut;
+  regul["hysteresis"] = HYSTERESIS;
+
+  JsonObject info = doc["info"].to<JsonObject>();
+  info["ident"] = IDENTIFIANT_ESP;
+  info["user"] = UTILISATEUR;
+  info["loc"] = LOCALISATION;
+
+  JsonObject net = doc["net"].to<JsonObject>();
+  net["uptime"] = millis() / 1000;
+  net["ssid"] = WiFi.status() == WL_CONNECTED ? WiFi.SSID() : "NOP";
+  net["mac"] = WiFi.macAddress();
+  net["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "0.0.0.0";
+
+  JsonObject reporthost = doc["reporthost"].to<JsonObject>();
+  reporthost["target_ip"] = "127.0.0.1";
+  reporthost["target_port"] = 1880;
+  reporthost["sp"] = INTERVALLE_MESURE_MS / 1000;
+
+  serializeJson(doc, sortie);
+  return sortie;
+}
+
+void initialiserLittleFS() {
+  LittleFS.begin(true);
+}
+
+void connecterWiFi() {
+  if (String(WIFI_SSID) == "A_REMPLACER") {
+    return;
+  }
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname(WIFI_HOSTNAME);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  unsigned long debutConnexion = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - debutConnexion < 15000) {
+    delay(250);
+  }
+}
+
+void configurerRoutesHttp() {
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/status", HTTP_GET, handleStatus);
+  server.on("/temperature", HTTP_GET, handleTemperature);
+  server.on("/leds", HTTP_GET, handleLeds);
+  server.on("/fan", HTTP_GET, handleFan);
+  server.on("/set", HTTP_GET, handleSet);
+  server.on("/esp.css", HTTP_GET, handleCss);
+  server.onNotFound(handleNotFound);
+}
+
+void handleRoot() {
+  if (!LittleFS.exists("/index.html")) {
+    server.send(500, "text/plain", "index.html introuvable dans LittleFS");
+    return;
+  }
+
+  File fichier = LittleFS.open("/index.html", "r");
+  String page = fichier.readString();
+  fichier.close();
+
+  page.replace("%TEMPERATURE%", String(derniereTemperatureFiltree, 1));
+  page.replace("%RAW_TEMPERATURE%", String(derniereTemperatureBrute, 1));
+  page.replace("%MODE%", nomMode(modeActuel));
+  page.replace("%HEAT%", modeActuel == MODE_CHAUFFAGE ? "ON" : "OFF");
+  page.replace("%COLD%", modeActuel == MODE_CLIMATISATION ? "ON" : "OFF");
+  page.replace("%FANSPEED%", String(vitesseVentilateur));
+  page.replace("%LT%", String(seuilBas, 1));
+  page.replace("%HT%", String(seuilHaut, 1));
+  page.replace("%SSID%", WiFi.status() == WL_CONNECTED ? WiFi.SSID() : "Non connecte");
+  page.replace("%IP%", WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "0.0.0.0");
+  page.replace("%MAC%", WiFi.macAddress());
+  page.replace("%UPTIME%", String(millis() / 1000));
+
+  server.send(200, "text/html", page);
+}
+
+void handleStatus() {
+  server.send(200, "application/json", construireJsonEtat());
+}
+
+void handleTemperature() {
+  server.send(200, "text/plain", String(derniereTemperatureFiltree, 1));
+}
+
+void handleLeds() {
+  String etat = String("{\"heat\":\"") +
+                (modeActuel == MODE_CHAUFFAGE ? "ON" : "OFF") +
+                "\",\"cold\":\"" +
+                (modeActuel == MODE_CLIMATISATION ? "ON" : "OFF") +
+                "\"}";
+  server.send(200, "application/json", etat);
+}
+
+void handleFan() {
+  server.send(200, "text/plain", String(vitesseVentilateur));
+}
+
+void handleSet() {
+  if (server.hasArg("lt")) {
+    seuilBas = server.arg("lt").toFloat();
+  }
+
+  if (server.hasArg("ht")) {
+    seuilHaut = server.arg("ht").toFloat();
+  }
+
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleCss() {
+  if (!LittleFS.exists("/esp.css")) {
+    server.send(404, "text/plain", "esp.css introuvable");
+    return;
+  }
+
+  File fichier = LittleFS.open("/esp.css", "r");
+  server.streamFile(fichier, "text/css");
+  fichier.close();
+}
+
+void handleNotFound() {
+  server.send(404, "text/plain", "Route inconnue");
 }
 
 const char* nomMode(ModeRegulation mode) {

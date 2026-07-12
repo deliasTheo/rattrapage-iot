@@ -151,3 +151,82 @@ Pour valider TP1.5, il faudra compiler le sketch dans Arduino IDE avec les bibli
 ### Notes personnelles
 
 Cette partie m'a permis de voir que le JSON n'est pas seulement un format d'affichage, mais une maniere de structurer proprement les donnees pour la suite du projet. J'ai aussi vu qu'il fallait faire attention a ne pas accepter automatiquement tout ce que l'IA propose : certains ajouts peuvent etre utiles en theorie, mais ne pas correspondre exactement a ce qui est demande pour le TP. Le fait d'avoir supprime `samples/` et `tools/` montre que je dois garder le controle sur le perimetre du projet.
+
+## Avancement 3 - TP1.75 / TP2.5 / TP3.0 : WiFi, HTTP et page HTML en Flash
+
+### Resume de la periode couverte par le tag
+
+Cette periode correspond au debut de la partie 3 : connexion WiFi, serveur HTTP et page HTML stockee dans la memoire Flash de l'ESP32 avec LittleFS.
+
+L'etape n'est pas encore validee et aucun tag Git n'a encore ete cree pour cette partie. L'objectif est de verifier que l'ESP peut quitter la simple communication serie pour devenir accessible depuis un navigateur sur le reseau local.
+
+### Travaux realises
+
+- Consultation de `docs/TP1.75.pdf` pour LittleFS et le stockage de fichiers HTML dans la memoire Flash.
+- Consultation de `docs/TP2.5-wifi.pdf` pour la connexion WiFi de l'ESP32 en mode station.
+- Consultation de `docs/TP3.0-http.pdf` pour la mise en place d'un serveur HTTP sur l'ESP.
+- Ajout de `WiFi.h`, `WebServer.h` et `LittleFS.h` dans le sketch principal.
+- Ajout de constantes `WIFI_SSID`, `WIFI_PASSWORD` et `WIFI_HOSTNAME`.
+- Ajout d'un serveur HTTP sur le port `80`.
+- Ajout des routes `/`, `/status`, `/temperature`, `/leds`, `/fan` et `/set`.
+- Creation du dossier `esp_iot/data/` avec `index.html` et `esp.css`, destines a etre uploades dans LittleFS.
+- Conservation de la regulation locale TP1 et de la sortie JSON serie TP1.5.
+- Ajout d'une interface HTML simple pour afficher temperature, etat des LEDs, etat du ventilateur, reseau et seuils.
+
+### Decisions techniques importantes
+
+Le choix principal a ete d'utiliser `WebServer` avec `WiFi.h` et `LittleFS`, plutot que `ESPAsyncWebServer`. Le cours presente le serveur asynchrone, mais cette version simple limite les dependances externes et reste plus facile a tester progressivement.
+
+La page HTML n'est pas integree directement comme grande chaine de caracteres dans le fichier `.ino`. Elle est placee dans `esp_iot/data/index.html`, avec une feuille de style `esp_iot/data/esp.css`, afin de respecter l'idee du TP : utiliser la memoire Flash de l'ESP pour stocker des fichiers Web.
+
+La route `/status` reutilise la structure JSON deja construite lors de TP1.5. Cela garde une coherence entre la communication serie et la communication HTTP.
+
+Les seuils `seuilBas` et `seuilHaut` sont devenus modifiables depuis la route `/set`, ce qui permet a la page HTML d'agir sur la regulation sans ajouter MQTT ou Node-RED.
+
+### Difficultes rencontrees
+
+Une erreur de code a ete reperee apres la modification : une ancienne constante `SEUIL_HAUT` etait encore utilisee alors que les seuils avaient ete transformes en variables modifiables. Elle a ete remplacee par `seuilHaut`.
+
+La partie LittleFS ajoute une contrainte de validation supplementaire : il ne suffit plus de televerser le firmware, il faut aussi uploader le dossier `data` dans la memoire Flash. Si cette etape est oubliee, la route `/` ne pourra pas afficher `index.html`.
+
+La compilation automatique n'a toujours pas ete faite depuis le terminal car `arduino-cli` n'est pas disponible.
+
+### Analyse de la qualite des prompts
+
+La demande etait courte mais claire : passer a la partie 3. Le contexte du projet et les consignes dans `AGENTS.md` ont permis d'identifier les documents a lire et de ne pas commencer MQTT trop tot.
+
+Le prompt laisse une marge de decision technique. Cette marge a ete utilisee pour choisir une architecture HTTP simple, plus adaptee a une progression etape par etape.
+
+### Mes points forts dans l'utilisation de l'IA
+
+Le projet avance avec une bonne logique de validation progressive. Les etapes precedentes ont ete taguees avant de commencer la suivante, ce qui permet de revenir facilement en arriere.
+
+Les corrections faites lors des etapes precedentes ont aussi aide a mieux cadrer cette partie : garder un seul dossier de code, eviter les fichiers annexes non demandes, et documenter les choix dans `notes.md`.
+
+### Mes points d'amelioration
+
+Il faudra tester plus systematiquement la compilation dans Arduino IDE, car l'absence de `arduino-cli` limite la verification automatique.
+
+Il faudra aussi faire attention aux identifiants WiFi. Ils ne doivent pas etre commits s'ils correspondent a un reseau personnel sensible. Pour l'instant, le code contient seulement des valeurs placeholder.
+
+### Situations ou nous avons perdu du temps ou rencontre des blocages
+
+Le principal risque de perte de temps concerne LittleFS : il faut bien uploader `esp_iot/data/` avant de tester la page Web. Sans cela, le serveur HTTP peut fonctionner mais la page HTML sera introuvable.
+
+Un autre point de vigilance est le choix entre serveur HTTP simple et serveur asynchrone. La version simple est plus pragmatique pour l'instant, mais il faudra accepter de la faire evoluer si les prochains besoins l'exigent.
+
+### Enseignements tires de cette etape
+
+Cette etape montre que l'ESP devient progressivement un objet connecte complet : il ne se contente plus d'envoyer des donnees sur le port serie, il expose aussi une interface consultable depuis un navigateur.
+
+Elle montre aussi l'interet de separer le code embarque et les fichiers Web. Le fichier `.ino` reste concentre sur les capteurs, la regulation et les routes HTTP, tandis que l'interface utilisateur est dans `data/index.html`.
+
+### Autres observations pertinentes
+
+Pour valider cette partie, il faudra remplacer `WIFI_SSID` et `WIFI_PASSWORD`, uploader LittleFS, uploader le firmware, recuperer l'adresse IP de l'ESP, puis tester `/`, `/status`, `/temperature`, `/leds` et `/fan` dans un navigateur.
+
+Cette partie ne doit pas encore etre taguee tant que la connexion WiFi et le serveur HTTP n'ont pas ete verifies.
+
+### Notes personnelles
+
+Cette partie me semble plus concrete parce qu'on commence a voir l'ESP comme un vrai objet connecte accessible depuis un navigateur. J'ai aussi compris qu'une etape comme LittleFS peut etre piegeuse : le code peut etre bon, mais si les fichiers HTML ne sont pas uploades dans la Flash, rien ne marche comme prevu. Le choix d'une version HTTP simple me parait coherent pour avancer sans ajouter trop de dependances d'un coup.

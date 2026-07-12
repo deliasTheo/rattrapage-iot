@@ -48,10 +48,24 @@ Correction de perimetre apres retour utilisateur : les dossiers `samples/` et `t
 
 ## 2026-07-12 - Mise a jour du rapport pendant TP1.5
 
-Le rapport a ete mis a jour a la demande de l'utilisateur pour inclure l'avancement TP1.5 et la correction de perimetre liee a la suppression de `samples/` et `tools/`. Aucun tag TP1.5 n'a ete cree a ce stade, car l'etape n'a pas encore ete annoncee comme validee.
+Le rapport a ete mis a jour a la demande de l'utilisateur pour inclure l'avancement TP1.5 et la correction de perimetre liee a la suppression de `samples/` et `tools/`. Au moment de cette note, aucun tag TP1.5 n'avait encore ete cree ; il a ensuite ete cree sous le nom `tp1-5-json-serie`.
 
 ## 2026-07-12 - Restructuration du rapport par avancement
 
 L'utilisateur a precise que le rapport ne devait pas etre organise comme un document global avec des sections uniques melangeant toutes les etapes. Il souhaite une partie par avancement, avec les memes sous-parties repetees a chaque fois : travaux realises, decisions techniques, difficultes, analyse des prompts, points forts, points d'amelioration, blocages, enseignements, observations et notes personnelles.
 
 Correction appliquee : `rapport.md` a ete restructure en `Avancement 1 - TP1` puis `Avancement 2 - TP1.5`. La note personnelle deja ecrite par l'utilisateur a ete conservee dans la partie TP1. La partie TP1.5 garde une section `Notes personnelles` vide pour etre completee plus tard.
+
+## 2026-07-12 - Debut partie 3, WiFi HTTP et page HTML en Flash
+
+L'etape 3 commence apres les tags `tp1-pilotage-local` et `tp1-5-json-serie`. Les documents consultes sont `docs/TP1.75.pdf` pour LittleFS, `docs/TP2.5-wifi.pdf` pour la connexion WiFi en mode station, et `docs/TP3.0-http.pdf` pour le serveur HTTP sur l'ESP.
+
+Decision technique : utiliser `WebServer` avec `WiFi.h` et `LittleFS` plutot que `ESPAsyncWebServer`. Le document du cours presente le serveur asynchrone, mais l'architecture simple est privilegiee ici pour limiter les dependances externes et rester dans une progression maitrisable. Cette decision pourra etre discutee dans le rapport comme un compromis entre fidelite au cours et simplicite.
+
+Le code conserve la regulation locale et le JSON serie des etapes precedentes. La partie HTTP ajoute les routes `/`, `/status`, `/temperature`, `/leds`, `/fan` et `/set`. La page `index.html` et le fichier `esp.css` sont places dans `esp_iot/data/` pour etre uploades dans LittleFS, comme indique par le document TP1.75.
+
+Point de validation a prevoir : l'utilisateur devra remplacer `WIFI_SSID` et `WIFI_PASSWORD` dans le sketch, uploader le dossier `data` en LittleFS, puis uploader le firmware. La page Web devra afficher l'etat de l'ESP et `/status` devra retourner le JSON.
+
+## 2026-07-12 - Mise a jour du rapport pour la partie 3
+
+Le rapport a ete complete avec un nouvel `Avancement 3` dedie a la partie WiFi, HTTP et LittleFS. La structure par avancement est conservee, avec les memes sous-parties que pour TP1 et TP1.5.
