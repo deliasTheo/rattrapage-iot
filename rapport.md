@@ -156,9 +156,9 @@ Cette partie m'a permis de voir que le JSON n'est pas seulement un format d'affi
 
 ### Resume de la periode couverte par le tag
 
-Cette periode correspond au debut de la partie 3 : connexion WiFi, serveur HTTP et page HTML stockee dans la memoire Flash de l'ESP32 avec LittleFS.
+Cette periode correspond a la partie 3 : connexion WiFi, serveur HTTP et page HTML stockee dans la memoire Flash de l'ESP32 avec LittleFS.
 
-L'etape n'est pas encore validee et aucun tag Git n'a encore ete cree pour cette partie. L'objectif est de verifier que l'ESP peut quitter la simple communication serie pour devenir accessible depuis un navigateur sur le reseau local.
+L'etat de cette etape est retrouve avec le tag Git `tp3-wifi-http-littlefs`. L'objectif etait de verifier que l'ESP pouvait quitter la simple communication serie pour devenir accessible depuis un navigateur sur le reseau local.
 
 ### Travaux realises
 
@@ -225,8 +225,95 @@ Elle montre aussi l'interet de separer le code embarque et les fichiers Web. Le 
 
 Pour valider cette partie, il faudra remplacer `WIFI_SSID` et `WIFI_PASSWORD`, uploader LittleFS, uploader le firmware, recuperer l'adresse IP de l'ESP, puis tester `/`, `/status`, `/temperature`, `/leds` et `/fan` dans un navigateur.
 
-Cette partie ne doit pas encore etre taguee tant que la connexion WiFi et le serveur HTTP n'ont pas ete verifies.
+Cette partie a ete taguee avant de commencer MQTT, afin de conserver un point de retour clair.
 
 ### Notes personnelles
 
 Cette partie me semble plus concrete parce qu'on commence a voir l'ESP comme un vrai objet connecte accessible depuis un navigateur. J'ai aussi compris qu'une etape comme LittleFS peut etre piegeuse : le code peut etre bon, mais si les fichiers HTML ne sont pas uploades dans la Flash, rien ne marche comme prevu. Le choix d'une version HTTP simple me parait coherent pour avancer sans ajouter trop de dependances d'un coup.
+
+## Avancement 4 - TP4.2 : MQTT
+
+### Resume de la periode couverte par le tag
+
+Cette periode correspond a la derniere partie du projet : ajout du protocole MQTT. L'etat de cette etape est retrouve avec le tag Git `tp4-mqtt`.
+
+L'objectif est de faire evoluer l'ESP vers un objet qui publie ses informations sur un broker MQTT et qui peut recevoir quelques commandes via un topic de souscription, tout en conservant les etapes precedentes : regulation locale, JSON serie, WiFi, HTTP et page HTML.
+
+### Travaux realises
+
+- Consultation de `docs/TP4-mqtt.pdf`.
+- Identification de la bibliotheque recommandee : `PubSubClient`.
+- Ajout de `PubSubClient.h` dans le sketch principal.
+- Configuration du broker `test.mosquitto.org` sur le port `1883`.
+- Publication de l'etat JSON sur le topic `uca/iot/master`, conformement au TODO du document MQTT.
+- Souscription au topic `uca/iot/master/commands`.
+- Ajout d'une commande JSON pour modifier les seuils `lt` et `ht`.
+- Ajout d'une commande `publish_now` pour forcer une publication MQTT immediate.
+- Augmentation du buffer MQTT a `2048` octets pour eviter que le JSON soit trop grand pour la taille standard.
+- Ajout de l'etat MQTT dans le JSON `/status`, dans la route HTTP `/mqtt`, et dans la page HTML.
+
+### Decisions techniques importantes
+
+La decision principale a ete d'utiliser `PubSubClient`, comme conseille dans le document du cours. Cette bibliotheque est synchrone et reste coherente avec l'architecture simple deja choisie pour HTTP.
+
+Le topic de publication est `uca/iot/master`, car le document MQTT demande de publier sur ce topic le meme JSON que celui utilise pour le reporting. Cela permet de reutiliser la structure JSON mise en place lors de TP1.5 et exposee ensuite par HTTP.
+
+Un topic de commandes separe, `uca/iot/master/commands`, a ete ajoute pour eviter de melanger les messages d'etat publies par l'ESP et les commandes envoyees vers l'ESP.
+
+Les commandes MQTT restent volontairement limitees. Elles permettent de modifier les seuils et de demander une publication immediate. Cela montre la reception de commandes sans introduire une logique applicative trop complexe.
+
+### Difficultes rencontrees
+
+La principale difficulte est que MQTT depend completement de la connexion WiFi. Tant que `WIFI_SSID` et `WIFI_PASSWORD` ne sont pas remplaces par des valeurs valides, l'ESP ne peut pas joindre le broker.
+
+Une autre difficulte concerne la taille du JSON. Le cours signale que `PubSubClient` a une taille de payload limitee par defaut. Le buffer a donc ete augmente a `2048` octets.
+
+La compilation automatique n'a toujours pas ete faite depuis le terminal car `arduino-cli` n'est pas disponible. La validation finale doit passer par Arduino IDE et par un client MQTT ou Node-RED.
+
+### Analyse de la qualite des prompts
+
+La demande etait claire sur l'ordre des operations : publier d'abord le tag de la partie 3, puis passer a la derniere partie, mettre a jour le rapport, ajouter une note personnelle, et creer un tag final.
+
+Cette consigne a permis de respecter la logique de progression du projet et d'eviter d'ecraser l'etat WiFi/HTTP avant d'ajouter MQTT.
+
+### Mes points forts dans l'utilisation de l'IA
+
+L'utilisation des tags devient plus rigoureuse. Chaque etape importante peut etre retrouvee dans Git, ce qui facilite la redaction du rapport et la demonstration de la progression.
+
+Le projet montre aussi une bonne reutilisation du code precedent : le JSON construit pour la serie et HTTP sert maintenant de payload MQTT.
+
+### Mes points d'amelioration
+
+Il faudra tester l'ensemble avec un vrai broker MQTT et un client de souscription. Le code est prepare, mais la validation pratique reste indispensable.
+
+Il faudra aussi eviter de laisser des identifiants WiFi personnels dans le code avant un push public. Le projet garde actuellement des placeholders.
+
+### Situations ou nous avons perdu du temps ou rencontre des blocages
+
+Le principal risque de blocage est la configuration reseau : WiFi 2.4 GHz, acces Internet ou acces au broker, port `1883` ouvert, et bibliotheque `PubSubClient` installee.
+
+Un autre risque est la confusion entre les topics. Le topic `uca/iot/master` sert a publier l'etat, tandis que `uca/iot/master/commands` sert aux commandes.
+
+### Enseignements tires de cette etape
+
+Cette etape montre la difference entre HTTP et MQTT. Avec HTTP, le navigateur vient interroger l'ESP. Avec MQTT, l'ESP publie ses donnees a un broker et d'autres clients peuvent les recevoir.
+
+Elle montre aussi l'interet d'avoir conserve un JSON stable. La meme representation de l'etat de l'objet peut etre utilisee sur le port serie, sur HTTP et sur MQTT.
+
+### Autres observations pertinentes
+
+Pour valider cette partie, il faudra installer `PubSubClient`, compiler le sketch, connecter l'ESP au WiFi, puis ecouter le topic :
+
+```bash
+mosquitto_sub -h test.mosquitto.org -t uca/iot/master -v
+```
+
+Pour tester une commande :
+
+```bash
+mosquitto_pub -h test.mosquitto.org -t uca/iot/master/commands -m "{\"lt\":21,\"ht\":27,\"publish_now\":true}"
+```
+
+### Notes personnelles
+
+Cette derniere partie montre bien pourquoi on a avance progressivement. Le JSON prepare avant sert maintenant directement pour MQTT, donc les choix faits dans les premieres etapes ont un vrai impact sur la suite. Je vois aussi que l'IA peut accelerer le developpement, mais que je dois rester attentif aux details pratiques : bibliotheques a installer, taille du payload MQTT, topics utilises, WiFi configure correctement et tests reels avec un client MQTT.

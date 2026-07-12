@@ -46,6 +46,13 @@
       <p>MAC : <strong>%MAC%</strong></p>
       <p>Uptime : <strong>%UPTIME%</strong> s</p>
     </section>
+
+    <section>
+      <h2>MQTT</h2>
+      <p>Broker : <strong>%MQTT_BROKER%</strong></p>
+      <p>Etat : <strong id="mqtt">%MQTT_STATUS%</strong></p>
+      <p>Topic publication : <strong>%MQTT_TOPIC%</strong></p>
+    </section>
   </main>
 
   <script>
@@ -55,6 +62,7 @@
       document.getElementById('temperature').textContent = data.status.temperature.toFixed(1);
       document.getElementById('mode').textContent = data.status.mode;
       document.getElementById('fan').textContent = data.status.fanspeed;
+      document.getElementById('mqtt').textContent = data.mqtt.connected ? 'connecte' : 'deconnecte';
     }
 
     setInterval(refreshStatus, 2000);

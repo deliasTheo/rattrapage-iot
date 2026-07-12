@@ -54,7 +54,7 @@ Le rapport a ete mis a jour a la demande de l'utilisateur pour inclure l'avancem
 
 L'utilisateur a precise que le rapport ne devait pas etre organise comme un document global avec des sections uniques melangeant toutes les etapes. Il souhaite une partie par avancement, avec les memes sous-parties repetees a chaque fois : travaux realises, decisions techniques, difficultes, analyse des prompts, points forts, points d'amelioration, blocages, enseignements, observations et notes personnelles.
 
-Correction appliquee : `rapport.md` a ete restructure en `Avancement 1 - TP1` puis `Avancement 2 - TP1.5`. La note personnelle deja ecrite par l'utilisateur a ete conservee dans la partie TP1. La partie TP1.5 garde une section `Notes personnelles` vide pour etre completee plus tard.
+Correction appliquee : `rapport.md` a ete restructure en `Avancement 1 - TP1` puis `Avancement 2 - TP1.5`. La note personnelle deja ecrite par l'utilisateur a ete conservee dans la partie TP1. La partie TP1.5 a ensuite ete completee dans le rapport au moment de la validation de l'etape.
 
 ## 2026-07-12 - Debut partie 3, WiFi HTTP et page HTML en Flash
 
@@ -69,3 +69,19 @@ Point de validation a prevoir : l'utilisateur devra remplacer `WIFI_SSID` et `WI
 ## 2026-07-12 - Mise a jour du rapport pour la partie 3
 
 Le rapport a ete complete avec un nouvel `Avancement 3` dedie a la partie WiFi, HTTP et LittleFS. La structure par avancement est conservee, avec les memes sous-parties que pour TP1 et TP1.5.
+
+## 2026-07-12 - Validation et publication de la partie 3
+
+La partie WiFi, HTTP et LittleFS a ete figée dans Git avant de commencer MQTT. Le tag cree est `tp3-wifi-http-littlefs`, puis il a ete pousse sur GitHub avec la branche `master`. Cette etape respecte la logique du projet : chaque fonctionnalite importante est retrouvee par un tag avant de passer a la suivante.
+
+## 2026-07-12 - Derniere partie, MQTT
+
+Le document consulte est `docs/TP4-mqtt.pdf`. Les points importants retenus sont l'utilisation de la bibliotheque `PubSubClient`, le broker de test `test.mosquitto.org`, le port MQTT `1883`, la necessite d'augmenter la taille du buffer pour un JSON plus grand, et le TODO demandant de publier sur le topic `uca/iot/master` le meme JSON que celui utilise pour le reporting.
+
+Decision technique : l'ESP publie son etat JSON sur `uca/iot/master` et s'abonne au topic `uca/iot/master/commands`. Les commandes sont volontairement limitees pour rester simples : modification des seuils `lt` et `ht`, et publication immediate avec `publish_now`. Le code conserve WiFi, HTTP, LittleFS, JSON serie et regulation locale.
+
+Point de vigilance : MQTT depend du WiFi. Si `WIFI_SSID` et `WIFI_PASSWORD` restent a `A_REMPLACER`, l'ESP ne se connectera pas au broker. La validation devra verifier la connexion MQTT, la reception des publications dans un client MQTT ou Node-RED, et la possibilite d'envoyer une commande JSON sur le topic de commandes.
+
+## 2026-07-12 - Mise a jour du rapport pour MQTT
+
+Le rapport a ete complete avec un `Avancement 4` dedie a MQTT. La partie 3 a aussi ete corrigee dans le rapport pour indiquer qu'elle dispose maintenant du tag `tp3-wifi-http-littlefs`.

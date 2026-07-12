@@ -1,6 +1,7 @@
 #include <ArduinoJson.h>
 #include <DHT.h>
 #include <LittleFS.h>
+#include <PubSubClient.h>
 #include <WebServer.h>
 #include <WiFi.h>
 
@@ -14,6 +15,13 @@ const uint8_t PIN_VENTILATEUR = 27;
 const char* WIFI_SSID = "A_REMPLACER";
 const char* WIFI_PASSWORD = "A_REMPLACER";
 const char* WIFI_HOSTNAME = "esp32-rattrapage-iot";
+
+const char* MQTT_BROKER = "test.mosquitto.org";
+const uint16_t MQTT_PORT = 1883;
+const char* MQTT_TOPIC_STATUS = "uca/iot/master";
+const char* MQTT_TOPIC_COMMANDS = "uca/iot/master/commands";
+const unsigned long MQTT_PUBLISH_INTERVAL_MS = 10000;
+const unsigned long MQTT_RECONNECT_INTERVAL_MS = 5000;
 
 // Si le capteur est un DHT22, remplacer DHT11 par DHT22.
 #define DHT_TYPE DHT11
@@ -60,6 +68,10 @@ unsigned long derniereMesureMs = 0;
 unsigned long dernierChangementModeMs = 0;
 
 WebServer server(80);
+WiFiClient mqttWifiClient;
+PubSubClient mqttClient(mqttWifiClient);
+unsigned long dernierePublicationMqttMs = 0;
+unsigned long derniereTentativeMqttMs = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -73,11 +85,13 @@ void setup() {
   initialiserLittleFS();
   connecterWiFi();
   configurerRoutesHttp();
+  configurerMqtt();
   server.begin();
 }
 
 void loop() {
   server.handleClient();
+  maintenirMqtt();
   unsigned long maintenant = millis();
 
   if (maintenant - derniereMesureMs < INTERVALLE_MESURE_MS) {
@@ -109,6 +123,7 @@ void loop() {
   }
 
   afficherEtatJson(temperature, temperatureFiltree);
+  publierEtatMqttSiNecessaire(maintenant);
 }
 
 void ajouterMesure(float temperature) {
@@ -227,6 +242,13 @@ void afficherEtatJson(float temperatureBrute, float temperatureFiltree) {
   net["mac"] = WiFi.macAddress();
   net["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "0.0.0.0";
 
+  JsonObject mqtt = doc["mqtt"].to<JsonObject>();
+  mqtt["broker"] = MQTT_BROKER;
+  mqtt["port"] = MQTT_PORT;
+  mqtt["connected"] = mqttClient.connected();
+  mqtt["topic_status"] = MQTT_TOPIC_STATUS;
+  mqtt["topic_commands"] = MQTT_TOPIC_COMMANDS;
+
   JsonObject reporthost = doc["reporthost"].to<JsonObject>();
   reporthost["target_ip"] = "127.0.0.1";
   reporthost["target_port"] = 1880;
@@ -273,6 +295,13 @@ void afficherErreurJson(const char* codeErreur) {
   net["ssid"] = WiFi.status() == WL_CONNECTED ? WiFi.SSID() : "NOP";
   net["mac"] = WiFi.macAddress();
   net["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "0.0.0.0";
+
+  JsonObject mqtt = doc["mqtt"].to<JsonObject>();
+  mqtt["broker"] = MQTT_BROKER;
+  mqtt["port"] = MQTT_PORT;
+  mqtt["connected"] = mqttClient.connected();
+  mqtt["topic_status"] = MQTT_TOPIC_STATUS;
+  mqtt["topic_commands"] = MQTT_TOPIC_COMMANDS;
 
   JsonObject reporthost = doc["reporthost"].to<JsonObject>();
   reporthost["target_ip"] = "127.0.0.1";
@@ -321,6 +350,13 @@ String construireJsonEtat() {
   net["mac"] = WiFi.macAddress();
   net["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "0.0.0.0";
 
+  JsonObject mqtt = doc["mqtt"].to<JsonObject>();
+  mqtt["broker"] = MQTT_BROKER;
+  mqtt["port"] = MQTT_PORT;
+  mqtt["connected"] = mqttClient.connected();
+  mqtt["topic_status"] = MQTT_TOPIC_STATUS;
+  mqtt["topic_commands"] = MQTT_TOPIC_COMMANDS;
+
   JsonObject reporthost = doc["reporthost"].to<JsonObject>();
   reporthost["target_ip"] = "127.0.0.1";
   reporthost["target_port"] = 1880;
@@ -355,6 +391,7 @@ void configurerRoutesHttp() {
   server.on("/temperature", HTTP_GET, handleTemperature);
   server.on("/leds", HTTP_GET, handleLeds);
   server.on("/fan", HTTP_GET, handleFan);
+  server.on("/mqtt", HTTP_GET, handleMqtt);
   server.on("/set", HTTP_GET, handleSet);
   server.on("/esp.css", HTTP_GET, handleCss);
   server.onNotFound(handleNotFound);
@@ -382,6 +419,9 @@ void handleRoot() {
   page.replace("%IP%", WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "0.0.0.0");
   page.replace("%MAC%", WiFi.macAddress());
   page.replace("%UPTIME%", String(millis() / 1000));
+  page.replace("%MQTT_BROKER%", MQTT_BROKER);
+  page.replace("%MQTT_STATUS%", mqttClient.connected() ? "connecte" : "deconnecte");
+  page.replace("%MQTT_TOPIC%", MQTT_TOPIC_STATUS);
 
   server.send(200, "text/html", page);
 }
@@ -405,6 +445,19 @@ void handleLeds() {
 
 void handleFan() {
   server.send(200, "text/plain", String(vitesseVentilateur));
+}
+
+void handleMqtt() {
+  StaticJsonDocument<300> doc;
+  doc["broker"] = MQTT_BROKER;
+  doc["port"] = MQTT_PORT;
+  doc["connected"] = mqttClient.connected();
+  doc["topic_status"] = MQTT_TOPIC_STATUS;
+  doc["topic_commands"] = MQTT_TOPIC_COMMANDS;
+
+  String sortie;
+  serializeJson(doc, sortie);
+  server.send(200, "application/json", sortie);
 }
 
 void handleSet() {
@@ -433,6 +486,80 @@ void handleCss() {
 
 void handleNotFound() {
   server.send(404, "text/plain", "Route inconnue");
+}
+
+void configurerMqtt() {
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setCallback(callbackMqtt);
+  mqttClient.setBufferSize(2048);
+}
+
+void maintenirMqtt() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  if (mqttClient.connected()) {
+    mqttClient.loop();
+    return;
+  }
+
+  unsigned long maintenant = millis();
+  if (maintenant - derniereTentativeMqttMs < MQTT_RECONNECT_INTERVAL_MS) {
+    return;
+  }
+
+  derniereTentativeMqttMs = maintenant;
+  String clientId = String("ESP32-") + WiFi.macAddress();
+  clientId.replace(":", "");
+
+  if (mqttClient.connect(clientId.c_str())) {
+    mqttClient.subscribe(MQTT_TOPIC_COMMANDS, 1);
+  }
+}
+
+void publierEtatMqttSiNecessaire(unsigned long maintenant) {
+  if (!mqttClient.connected()) {
+    return;
+  }
+
+  if (maintenant - dernierePublicationMqttMs < MQTT_PUBLISH_INTERVAL_MS) {
+    return;
+  }
+
+  dernierePublicationMqttMs = maintenant;
+  String payload = construireJsonEtat();
+  mqttClient.publish(MQTT_TOPIC_STATUS, payload.c_str());
+}
+
+void callbackMqtt(char* topic, byte* payload, unsigned int length) {
+  String message;
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+
+  if (String(topic) != MQTT_TOPIC_COMMANDS) {
+    return;
+  }
+
+  StaticJsonDocument<256> commande;
+  DeserializationError erreur = deserializeJson(commande, message);
+  if (erreur) {
+    return;
+  }
+
+  if (commande.containsKey("lt")) {
+    seuilBas = commande["lt"].as<float>();
+  }
+
+  if (commande.containsKey("ht")) {
+    seuilHaut = commande["ht"].as<float>();
+  }
+
+  if (commande.containsKey("publish_now") && commande["publish_now"].as<bool>()) {
+    String etat = construireJsonEtat();
+    mqttClient.publish(MQTT_TOPIC_STATUS, etat.c_str());
+  }
 }
 
 const char* nomMode(ModeRegulation mode) {
